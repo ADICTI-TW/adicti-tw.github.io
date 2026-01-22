@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Web Serial 設定工具 (Mobile)</title>
+    <style>
+        /* 手機版面優化 CSS */
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: #f0f2f5; 
+            margin: 0; 
+            padding: 1rem; 
+            color: #333;
+        }
+        .card { 
+            background: white; 
+            padding: 1.5rem; 
+            border-radius: 12px; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1); 
+            max-width: 100%; /* 確保不超出手機螢幕 */
+            margin: 0 auto;
+        }
+        h2 { margin-top: 0; font-size: 1.5rem; text-align: center; }
+        
+        .form-group { margin-bottom: 1.2rem; }
+        label { display: block; margin-bottom: 0.5rem; font-weight: 600; font-size: 0.95rem; }
+        
+        /* 輸入框加大，方便點擊 */
+        input { 
+            width: 100%; 
+            padding: 0.8rem; 
+            border: 1px solid #ddd; 
+            border-radius: 8px; 
+            box-sizing: border-box; 
+            font-size: 1rem; 
+            background: #fafafa;
+        }
+        input:focus { border-color: #007bff; outline: none; background: #fff; }
+
+        /* 按鈕優化：全寬度、大點擊區域 */
+        button { 
+            width: 100%; 
+            padding: 1rem; 
+            border: none; 
+            border-radius: 8px; 
+            font-size: 1.1rem; 
+            font-weight: bold; 
+            cursor: pointer; 
+            transition: opacity 0.2s;
+            margin-bottom: 0.5rem;
+        }
+        button:active { opacity: 0.8; }
+        #btnConnect { background: #007bff; color: white; box-shadow: 0 4px 6px rgba(0,123,255,0.2); }
+        #btnSave { background: #28a745; color: white; margin-top: 1rem; box-shadow: 0 4px 6px rgba(40,167,69,0.2); }
+        button:disabled { background: #e0e0e0; color: #999; box-shadow: none; cursor: not-allowed; }
+
+        #status { margin-top: 1rem; padding: 1rem; border-radius: 8px; display: none; text-align: center; font-weight: bold; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        
+        /* Log 區域在手機上預設縮小，需要時可滑動 */
+        .log { 
+            margin-top: 20px; 
+            font-family: monospace; 
+            font-size: 0.85em; 
+            color: #666; 
+            white-space: pre-wrap; 
+            background: #eee;
+            padding: 0.8rem;
+            border-radius: 8px;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        /* 針對不支援 API 的瀏覽器顯示警告 */
+        #unsupported {
+            display: none;
+            background: #ffecb3;
+            color: #663c00;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+<div id="unsupported">⚠️ 您的瀏覽器不支援 Web Serial API。<br>請使用 Android Chrome 89+。</div>
+
+<div class="card">
+    <h2>📱 Arduino 設定工具</h2>
+    
+    <div>
+        <button id="btnConnect">🔌 連接 USB OTG 設備</button>
+    </div>
+
+    <div id="settingsPanel" style="opacity: 0.5; pointer-events: none;">
+        <div class="form-group">
+            <label for="ssid">WiFi SSID:</label>
+            <input type="text" id="ssid" placeholder="輸入 WiFi 名稱">
+        </div>
+        <div class="form-group">
+            <label for="baud">Baud Rate:</label>
+            <input type="number" id="baud" value="9600">
+        </div>
+        <div class="form-group">
+            <label for="memo">備註 (Memo):</label>
+            <input type="text" id="memo" placeholder="任意備註">
+        </div>
+        
+        <button id="btnSave" disabled>💾 儲存並驗證</button>
+    </div>
+
+    <div id="status"></div>
+    <div class="log" id="logArea">等待連接...</div>
+</div>
+
+<script>
+    // 檢查瀏覽器支援度
+    if (!("serial" in navigator)) {
+        document.getElementById('unsupported').style.display = 'block';
+        document.getElementById('btnConnect').disabled = true;
+    }
+
+    let port;
+    let inputBuffer = "";
+
+    const btnConnect = document.getElementById('btnConnect');
+    const btnSave = document.getElementById('btnSave');
+    const settingsPanel = document.getElementById('settingsPanel');
+    const statusDiv = document.getElementById('status');
+    const logArea = document.getElementById('logArea');
+
+    // 定義常見 Arduino USB 晶片的 Vendor ID，幫助 Android 過濾設備
+    // 0x2341: Arduino Original
+    // 0x1A86: CH340 (常見副廠)
+    // 0x10C4: CP210x (Silicon Labs)
+    // 0x0403: FTDI
+    const usbFilters = [
+        { usbVendorId: 0x2341 },
+        { usbVendorId: 0x1a86 },
+        { usbVendorId: 0x10c4 },
+        { usbVendorId: 0x0403 }
+    ];
+
+    btnConnect.addEventListener('click', async () => {
+        try {
+            // 在 Android 上，requestPort 建議帶入 filters，但為了相容性，我們先嘗試不帶 filter
+            // 如果您發現找不到設備，可以改用： port = await navigator.serial.requestPort({ filters: usbFilters });
+            port = await navigator.serial.requestPort();
+            
+            await port.open({ baudRate: 115200 });
+            
+            btnConnect.textContent = "✅ 已透過 OTG 連接";
+            btnConnect.disabled = true;
+            settingsPanel.style.opacity = "1";
+            settingsPanel.style.pointerEvents = "auto";
+            btnSave.disabled = false;
+            
+            log("Serial Port 已開啟，開始監聽...");
+            readLoop();
+
+        } catch (err) {
+            console.error(err);
+            // 針對 Android 常見錯誤提供具體建議
+            if (err.name === 'NotFoundError') {
+                alert("找不到設備。\n請確認：\n1. OTG 線已插好\n2. 若是 OPPO/Vivo/Realme 手機，請到設定開啟「OTG 連接」\n3. 授權視窗請點選允許");
+            } else {
+                alert("連接失敗: " + err.message);
+            }
+        }
+    });
+
+    btnSave.addEventListener('click', async () => {
+        if (!port || !port.writable) return;
+
+        const data = {
+            ssid: document.getElementById('ssid').value,
+            baud: parseInt(document.getElementById('baud').value),
+            memo: document.getElementById('memo').value
+        };
+
+        const jsonString = JSON.stringify(data);
+        log(`發送: ${jsonString}`);
+        showStatus("寫入中...", "normal");
+
+        try {
+            const textEncoder = new TextEncoder();
+            const writer = port.writable.getWriter();
+            await writer.write(textEncoder.encode(jsonString + "\n"));
+            writer.releaseLock();
+        } catch (e) {
+            log("發送錯誤: " + e);
+            alert("發送失敗，請檢查 OTG 連接是否鬆動");
+        }
+    });
+
+    async function readLoop() {
+        const textDecoder = new TextDecoderStream();
+        // 捕獲錯誤以防止手機休眠或斷線導致 crash
+        try {
+            const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+            const reader = textDecoder.readable.getReader();
+            
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+                if (value) handleSerialData(value);
+            }
+        } catch (error) {
+            log("讀取錯誤 (可能設備已斷開): " + error);
+            btnConnect.disabled = false;
+            btnConnect.textContent = "🔌 重新連接";
+            settingsPanel.style.opacity = "0.5";
+            settingsPanel.style.pointerEvents = "none";
+        }
+    }
+
+    function handleSerialData(chunk) {
+        inputBuffer += chunk;
+        let eolIndex;
+        while ((eolIndex = inputBuffer.indexOf('\n')) >= 0) {
+            const line = inputBuffer.slice(0, eolIndex).trim();
+            inputBuffer = inputBuffer.slice(eolIndex + 1);
+            if (line.length > 0) parseArduinoResponse(line);
+        }
+    }
+
+    function parseArduinoResponse(jsonStr) {
+        log(`RX: ${jsonStr}`);
+        try {
+            const response = JSON.parse(jsonStr);
+            if (response.status === "success") {
+                // 格式化顯示驗證資訊
+                let msg = `✅ 儲存成功 (Flash 驗證 OK)\n`;
+                msg += `SSID: ${response.read_ssid}\n`;
+                msg += `Baud: ${response.read_baud}`;
+                showStatus(msg, "success");
+            } else if (response.status === "error") {
+                showStatus(`❌ 錯誤: ${response.msg}`, "error");
+            }
+        } catch (e) {
+            // 忽略非 JSON 訊息
+        }
+    }
+
+    function showStatus(msg, type) {
+        statusDiv.style.display = 'block';
+        statusDiv.innerText = msg; // 使用 innerText 讓 \n 換行生效
+        statusDiv.className = type === 'success' ? 'success' : (type === 'error' ? 'error' : '');
+    }
+
+    function log(msg) {
+        const time = new Date().toLocaleTimeString();
+        logArea.textContent += `[${time}] ${msg}\n`;
+        logArea.scrollTop = logArea.scrollHeight;
+    }
+</script>
+
+</body>
+</html>
