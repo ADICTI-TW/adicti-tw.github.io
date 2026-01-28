@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>設備狀態監測 (PutStatus)</title>
+    <style>
+        body {
+            font-family: "Microsoft JhengHei", Arial, sans-serif;
+            background-color: #f4f4f9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            width: 350px;
+            text-align: center;
+        }
+        h2 {
+            color: #333;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        .data-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 15px 0;
+            font-size: 1.1em;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        .label {
+            font-weight: bold;
+            color: #555;
+        }
+        .value {
+            color: #007bff;
+            font-family: monospace;
+            font-weight: bold;
+        }
+        #clear-btn {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            margin-top: 20px;
+            width: 100%;
+            transition: background 0.3s;
+        }
+        #clear-btn:hover {
+            background-color: #c82333;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h2>接收參數狀態</h2>
+        
+        <div class="data-row">
+            <span class="label">序號 (SN):</span>
+            <span class="value" id="disp-sn">-</span>
+        </div>
+        <div class="data-row">
+            <span class="label">深度 (V):</span>
+            <span class="value" id="disp-v">-</span>
+        </div>
+        <div class="data-row">
+            <span class="label">溫度 (T):</span>
+            <span class="value" id="disp-t">-</span>
+        </div>
+        <div class="data-row">
+            <span class="label">濕度 (H):</span>
+            <span class="value" id="disp-h">-</span>
+        </div>
+
+        <button id="clear-btn" onclick="clearData()">清除參數</button>
+    </div>
+
+    <script>
+        // 頁面載入時執行
+        window.onload = function() {
+            // 1. 取得網址中的查詢字串 (Query String)
+            const queryString = window.location.search;
+            
+            // 2. 使用 URLSearchParams 解析參數
+            const urlParams = new URLSearchParams(queryString);
+
+            // 3. 讀取各個參數並顯示
+            // 如果網址中有該參數，就顯示數值，否則保持預設值
+            if(urlParams.has('SN')) {
+                document.getElementById('disp-sn').innerText = urlParams.get('SN');
+            }
+            if(urlParams.has('V')) {
+                document.getElementById('disp-v').innerText = urlParams.get('V') + ' mm';
+            }
+            if(urlParams.has('T')) {
+                document.getElementById('disp-t').innerText = urlParams.get('T') + ' °C';
+            }
+            if(urlParams.has('H')) {
+                document.getElementById('disp-h').innerText = urlParams.get('H') + ' %';
+            }
+        };
+
+        // 清除按鈕的功能
+        function clearData() {
+            // 清空顯示的文字
+            document.getElementById('disp-sn').innerText = '-';
+            document.getElementById('disp-v').innerText = '-';
+            document.getElementById('disp-t').innerText = '-';
+            document.getElementById('disp-h').innerText = '-';
+
+            // 選用：如果您希望清除後也把網址列的參數拿掉，可以取消下面這行的註解
+            // history.pushState({}, null, window.location.pathname);
+        }
+    </script>
+</body>
+</html>
